@@ -1,0 +1,863 @@
+<!DOCTYPE html> <!-- Déclare que c'est un document HTML5 -->
+<html lang="fr"> <!-- Balise racine du document, langue française -->
+<head> <!-- Contient les métadonnées (invisible à l'écran) -->
+    <meta charset="UTF-8"> <!-- Encodage des caractères : permet les accents -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> <!-- Adapte l'affichage aux mobiles -->
+    <title>Météo - Application</title> <!-- Titre affiché dans l'onglet du navigateur -->
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" /> <!-- Importe le CSS de la bibliothèque de carte Leaflet -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"> <!-- Importe la police Inter depuis Google Fonts -->
+
+    <style> <!-- Début du bloc de styles CSS intégrés à la page -->
+
+        * { /* Sélectionne TOUS les éléments HTML */
+            margin: 0; /* Supprime les marges extérieures par défaut */
+            padding: 0; /* Supprime les espacements intérieurs par défaut */
+            box-sizing: border-box; /* Le padding est inclus dans la largeur totale, évite les débordements */
+        }
+
+        :root { /* Variables CSS globales, accessibles partout dans le fichier */
+            --primary: #ff6b35; /* Couleur principale : orange vif */
+            --bg-card: rgba(255, 255, 255, 0.95); /* Fond des cartes : blanc presque opaque */
+            --bg-secondary: rgba(245, 242, 235, 0.95); /* Fond secondaire : beige très clair */
+            --text-primary: #2c3e50; /* Couleur texte principal : gris foncé */
+            --text-secondary: #7f8c8d; /* Couleur texte secondaire : gris moyen */
+            --shadow: rgba(0, 0, 0, 0.15); /* Couleur des ombres portées */
+        }
+
+        body { /* Style appliqué à toute la page */
+            font-family: 'Inter', sans-serif; /* Police Inter chargée depuis Google Fonts */
+            background: linear-gradient(180deg, #4a5568 0%, #2d3748 100%); /* Dégradé gris foncé affiché si l'image de fond ne charge pas */
+            min-height: 100vh; /* La page fait au minimum 100% de la hauteur de l'écran */
+            color: var(--text-primary); /* Couleur de texte par défaut (gris foncé) */
+            position: relative; /* Nécessaire pour que les enfants absolus se positionnent par rapport au body */
+            overflow-x: hidden; /* Interdit le scroll horizontal */
+        }
+
+        .weather-bg { /* Image de fond plein écran, derrière tout le contenu */
+            position: fixed; /* Reste en place même quand on fait défiler la page */
+            top: 0; /* Collé en haut de l'écran */
+            left: 0; /* Collé à gauche de l'écran */
+            width: 100%; /* Prend toute la largeur */
+            height: 100%; /* Prend toute la hauteur */
+            background: url('https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=1920&q=80') center/cover; /* Image de ciel, centrée et couvrant tout l'espace */
+            z-index: 0; /* Placé en tout premier plan arrière (valeur la plus basse) */
+        }
+
+        .weather-bg::after { /* Pseudo-élément : couche sombre par-dessus l'image de fond */
+            content: ''; /* Obligatoire pour qu'un pseudo-élément existe même sans texte */
+            position: absolute; /* Se positionne par rapport à son parent .weather-bg */
+            top: 0; /* Couvre depuis le haut */
+            left: 0; /* Couvre depuis la gauche */
+            width: 100%; /* Même largeur que le parent */
+            height: 100%; /* Même hauteur que le parent */
+            background: linear-gradient(180deg, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.5) 100%); /* Dégradé noir : léger en haut, plus opaque en bas, pour lisibilité du texte */
+        }
+
+        .container { /* Conteneur central qui enveloppe tout le contenu visible */
+            position: relative; /* Nécessaire pour définir un z-index */
+            z-index: 1; /* Au-dessus du fond (.weather-bg a z-index: 0) */
+            max-width: 1400px; /* Largeur maximale : évite que le contenu soit trop étalé sur grands écrans */
+            margin: 0 auto; /* Centré horizontalement (marges égales gauche et droite) */
+            padding: 2rem; /* Espace intérieur de 2rem sur tous les côtés */
+        }
+
+        header { /* En-tête de la page contenant logo, recherche et favoris */
+            display: flex; /* Les éléments enfants s'alignent en ligne horizontale */
+            justify-content: space-between; /* Espace maximum entre les éléments (logo à gauche, favoris à droite) */
+            align-items: center; /* Alignement vertical centré */
+            margin-bottom: 2rem; /* Espace de 2rem sous le header */
+        }
+
+        .logo { /* Logo WeatherApp en haut à gauche */
+            color: white; /* Texte blanc */
+            font-size: 1.5rem; /* Taille du texte */
+            font-weight: 700; /* Texte en gras */
+            display: flex; /* Aligne l'emoji et le texte sur la même ligne */
+            align-items: center; /* Centrage vertical de l'emoji par rapport au texte */
+            gap: 0.5rem; /* Espace entre l'emoji ☁️ et le texte "WeatherApp" */
+        }
+
+        .search-bar { /* Barre de recherche avec effet verre (glassmorphism) */
+            display: flex; /* L'icône loupe et l'input s'alignent côte à côte */
+            align-items: center; /* Centrage vertical */
+            background: rgba(255, 255, 255, 0.2); /* Fond blanc très transparent */
+            backdrop-filter: blur(10px); /* Flou l'arrière-plan visible à travers (effet verre dépoli) */
+            border-radius: 24px; /* Coins très arrondis */
+            padding: 0.75rem 1.5rem; /* Espace intérieur : 0.75rem haut/bas, 1.5rem gauche/droite */
+            gap: 0.75rem; /* Espace entre l'icône loupe et le champ texte */
+            min-width: 400px; /* Largeur minimale pour ne pas être trop petite */
+            border: 1px solid rgba(255, 255, 255, 0.3); /* Légère bordure blanche visible */
+        }
+
+        .search-bar input { /* Champ de saisie à l'intérieur de la barre */
+            flex: 1; /* Prend tout l'espace horizontal restant dans la barre */
+            background: none; /* Fond transparent : pas de rectangle blanc par défaut */
+            border: none; /* Pas de bordure */
+            color: white; /* Le texte saisi apparaît en blanc */
+            font-size: 1rem; /* Taille normale */
+            outline: none; /* Supprime le contour bleu qui apparaît normalement au clic */
+        }
+
+        .search-bar input::placeholder { /* Style du texte affiché quand le champ est vide */
+            color: rgba(255, 255, 255, 0.7); /* Blanc semi-transparent pour le placeholder */
+        }
+
+        .search-icon { /* Icône loupe à gauche de la barre de recherche */
+            color: white; /* Blanche */
+            font-size: 1.2rem; /* Légèrement plus grande que le texte normal */
+        }
+
+        .location-info { /* Ligne affichant "📍 Paris, FR" */
+            display: flex; /* Emoji et texte côte à côte */
+            align-items: center; /* Alignés verticalement */
+            gap: 0.5rem; /* Espace entre l'épingle et le nom de la ville */
+            color: white; /* Texte blanc */
+            font-size: 1.2rem; /* Légèrement plus grand que le texte normal */
+            margin-bottom: 1rem; /* Espace sous cette ligne */
+        }
+
+        .temp-toggle { /* Conteneur des deux boutons °C / °F */
+            display: flex; /* Boutons côte à côte */
+            gap: 0.5rem; /* Petit espace entre les deux boutons */
+            background: rgba(255, 255, 255, 0.2); /* Fond transparent */
+            backdrop-filter: blur(10px); /* Effet verre */
+            border-radius: 20px; /* Coins très arrondis */
+            padding: 0.25rem; /* Petit espace autour des boutons */
+        }
+
+        .temp-toggle button { /* Style appliqué aux deux boutons °C et °F */
+            padding: 0.5rem 1rem; /* Espace intérieur */
+            border: none; /* Pas de bordure */
+            background: transparent; /* Fond transparent par défaut */
+            color: white; /* Texte blanc */
+            border-radius: 16px; /* Coins arrondis */
+            cursor: pointer; /* Curseur en forme de main au survol */
+            font-weight: 500; /* Semi-gras */
+            transition: all 0.3s; /* Toutes les propriétés changent en douceur sur 0.3 secondes */
+        }
+
+        .temp-toggle button.active { /* Bouton de l'unité actuellement sélectionnée */
+            background: rgba(255, 255, 255, 0.3); /* Fond blanc légèrement plus visible que les inactifs */
+        }
+
+        .forecast-days { /* Bande horizontale contenant les cartes des 7 jours */
+            display: flex; /* Cartes alignées côte à côte */
+            gap: 1rem; /* Espace entre chaque carte jour */
+            margin-bottom: 2rem; /* Espace sous la bande */
+            overflow-x: auto; /* Active le scroll horizontal si les cartes débordent */
+            padding-bottom: 0.5rem; /* Espace en bas pour ne pas couper la scrollbar */
+        }
+
+        .day-card { /* Carte représentant un jour de prévision */
+            background: rgba(255, 255, 255, 0.15); /* Fond blanc très transparent */
+            backdrop-filter: blur(10px); /* Effet verre */
+            border-radius: 16px; /* Coins arrondis */
+            padding: 1rem 1.5rem; /* Espace intérieur */
+            min-width: 120px; /* Largeur minimale pour rester lisible */
+            text-align: center; /* Tout le contenu est centré */
+            color: white; /* Texte blanc */
+            cursor: pointer; /* Curseur main (cliquable) */
+            transition: all 0.3s; /* Animation fluide sur les changements */
+            border: 1px solid rgba(255, 255, 255, 0.2); /* Légère bordure blanche */
+        }
+
+        .day-card.active { /* La carte du jour actuellement affiché */
+            background: var(--primary); /* Orange vif pour la mettre en évidence */
+        }
+
+        .day-card:hover { /* Effet au survol d'une carte jour */
+            transform: translateY(-4px); /* Remonte la carte de 4px (effet de lévitation) */
+            background: rgba(255, 255, 255, 0.25); /* Légèrement plus claire au survol */
+        }
+
+        .day-card.active:hover { /* Le jour actif survolé ne doit pas changer de couleur */
+            background: var(--primary); /* Reste orange même au survol */
+        }
+
+        .day-name { /* Nom du jour dans la carte (ex: "Today", "Mon") */
+            font-weight: 600; /* Semi-gras */
+            margin-bottom: 0.5rem; /* Espace sous le texte */
+        }
+
+        .day-temp { /* Température affichée dans la carte jour */
+            font-size: 1.5rem; /* Grande taille */
+            font-weight: 700; /* Gras */
+        }
+
+        .day-icon { /* Emoji météo de la carte jour */
+            font-size: 2rem; /* Grande taille pour bien voir l'emoji */
+            margin: 0.5rem 0; /* Espace au-dessus et en dessous */
+        }
+
+        .main-content { /* Grille principale : météo actuelle + prévisions horaires */
+            display: grid; /* Utilise CSS Grid pour la mise en page */
+            grid-template-columns: 1fr 2fr; /* 2 colonnes : gauche = 1/3, droite = 2/3 de la largeur */
+            gap: 2rem; /* Espace entre les deux colonnes */
+            margin-bottom: 2rem; /* Espace sous cette section */
+        }
+
+        .card { /* Style commun appliqué à toutes les cartes blanches */
+            background: var(--bg-card); /* Fond blanc semi-opaque */
+            border-radius: 24px; /* Coins très arrondis */
+            padding: 2rem; /* Espace intérieur généreux */
+            box-shadow: 0 8px 32px var(--shadow); /* Ombre portée pour créer un effet de profondeur */
+        }
+
+        .current-weather { /* Carte gauche affichant la météo du moment */
+            position: relative; /* Pour positionner d'éventuels éléments enfants en absolu */
+            overflow: hidden; /* Coupe tout ce qui dépasse les bords arrondis de la carte */
+        }
+
+        .weather-image { /* Photo illustrant la condition météo (soleil, pluie, neige...) */
+            width: 100%; /* Prend toute la largeur de la carte */
+            height: 300px; /* Hauteur fixe */
+            object-fit: cover; /* Recadre l'image sans la déformer pour remplir l'espace */
+            border-radius: 16px; /* Coins arrondis */
+            margin-bottom: 1.5rem; /* Espace sous la photo */
+        }
+
+        .current-temp { /* Grande température affichée en gros */
+            font-size: 5rem; /* Très grande taille pour être visible immédiatement */
+            font-weight: 700; /* Gras */
+            color: var(--text-primary); /* Gris foncé */
+            line-height: 1; /* Hauteur de ligne = taille de la police, évite trop d'espace vertical */
+        }
+
+        .weather-description { /* Description textuelle de la météo (ex: "pluie légère") */
+            font-size: 1.5rem; /* Taille moyenne-grande */
+            color: var(--text-secondary); /* Gris moyen */
+            text-transform: capitalize; /* Met automatiquement la première lettre en majuscule */
+            margin: 0.5rem 0 1.5rem; /* Marges : 0.5rem en haut, 0 côtés, 1.5rem en bas */
+        }
+
+        .feels-like { /* Ligne affichant la température ressentie */
+            font-size: 1.1rem; /* Légèrement plus grand que le texte normal */
+            color: var(--text-secondary); /* Gris */
+        }
+
+        .weather-details { /* Grille des 6 indicateurs météo (vent, humidité, UV...) */
+            display: grid; /* CSS Grid */
+            grid-template-columns: repeat(3, 1fr); /* 3 colonnes de taille identique */
+            gap: 1rem; /* Espace entre chaque case */
+            margin-top: 2rem; /* Espace au-dessus de la grille */
+        }
+
+        .detail-item { /* Chaque case d'indicateur météo */
+            background: var(--bg-secondary); /* Fond beige très clair */
+            padding: 1.25rem; /* Espace intérieur */
+            border-radius: 16px; /* Coins arrondis */
+            text-align: center; /* Contenu centré horizontalement */
+        }
+
+        .detail-icon { /* Emoji représentant l'indicateur (💨, 💧, etc.) */
+            font-size: 1.5rem; /* Taille moyenne */
+            margin-bottom: 0.5rem; /* Espace sous l'icône */
+        }
+
+        .detail-label { /* Label en petites majuscules (ex: "WIND", "HUMIDITY") */
+            font-size: 0.85rem; /* Petite taille */
+            color: var(--text-secondary); /* Gris moyen */
+            text-transform: uppercase; /* Tout en majuscules */
+            letter-spacing: 0.05em; /* Espacement légèrement augmenté entre les lettres */
+            margin-bottom: 0.25rem; /* Petit espace sous le label */
+        }
+
+        .detail-value { /* Valeur numérique de l'indicateur (ex: "5 m/s S") */
+            font-size: 1.25rem; /* Taille lisible */
+            font-weight: 600; /* Semi-gras */
+            color: var(--text-primary); /* Gris foncé */
+        }
+
+        .hourly-forecast { /* Carte droite : prévisions heure par heure */
+            background: var(--bg-card); /* Même fond blanc que les autres cartes */
+        }
+
+        .section-title { /* Titre "Hourly forecast" */
+            font-size: 1.5rem; /* Taille moyenne-grande */
+            font-weight: 600; /* Semi-gras */
+            margin-bottom: 1.5rem; /* Espace sous le titre */
+            color: var(--text-primary); /* Gris foncé */
+        }
+
+        .hourly-scroll { /* Conteneur horizontal scrollable pour les cartes horaires */
+            display: flex; /* Les cartes s'alignent côte à côte */
+            gap: 1rem; /* Espace entre les cartes */
+            overflow-x: auto; /* Scroll horizontal si les cartes débordent */
+            padding-bottom: 1rem; /* Espace pour que la scrollbar ne cache pas les cartes */
+        }
+
+        .hour-card { /* Carte d'une tranche horaire (toutes les 3h) */
+            min-width: 100px; /* Largeur minimale pour rester lisible */
+            background: var(--bg-secondary); /* Fond beige */
+            padding: 1.25rem; /* Espace intérieur */
+            border-radius: 16px; /* Coins arrondis */
+            text-align: center; /* Contenu centré */
+            flex-shrink: 0; /* Interdit à la carte de rétrécir dans le conteneur flex */
+        }
+
+        .hour-time { /* Heure affichée dans la carte (ex: "3 PM") */
+            font-weight: 600; /* Semi-gras */
+            margin-bottom: 0.75rem; /* Espace sous l'heure */
+            color: var(--text-primary); /* Gris foncé */
+        }
+
+        .hour-icon { /* Emoji météo de la tranche horaire */
+            font-size: 2rem; /* Grande taille */
+            margin: 0.5rem 0; /* Espace au-dessus et en dessous */
+        }
+
+        .hour-temp { /* Température de la tranche horaire */
+            font-size: 1.25rem; /* Taille lisible */
+            font-weight: 700; /* Gras */
+            color: var(--text-primary); /* Gris foncé */
+        }
+
+        .hour-precip { /* Probabilité de précipitations (ex: "30%") */
+            font-size: 0.85rem; /* Petit texte */
+            color: var(--text-secondary); /* Gris moyen */
+            margin-top: 0.5rem; /* Espace au-dessus */
+        }
+
+        .map-section { /* Conteneur de la carte géographique Leaflet */
+            height: 400px; /* Hauteur fixe */
+            border-radius: 24px; /* Coins arrondis */
+            overflow: hidden; /* Les coins arrondis s'appliquent aussi à la carte Leaflet à l'intérieur */
+            box-shadow: 0 8px 32px var(--shadow); /* Ombre portée */
+        }
+
+        #map { /* Div ciblée par Leaflet pour y insérer la carte interactive */
+            height: 100%; /* Prend toute la hauteur du parent (.map-section) */
+            width: 100%; /* Prend toute la largeur du parent */
+        }
+
+        .favorites-btn { /* Bouton "Add to Favorites" dans le header */
+            background: rgba(255, 255, 255, 0.2); /* Fond blanc transparent */
+            backdrop-filter: blur(10px); /* Effet verre */
+            border: 1px solid rgba(255, 255, 255, 0.3); /* Légère bordure blanche */
+            color: white; /* Texte blanc */
+            padding: 0.75rem 1.5rem; /* Espace intérieur */
+            border-radius: 20px; /* Coins arrondis */
+            cursor: pointer; /* Curseur main */
+            font-weight: 500; /* Semi-gras */
+            transition: all 0.3s; /* Animation fluide */
+            display: flex; /* Emoji étoile et texte côte à côte */
+            align-items: center; /* Centrage vertical */
+            gap: 0.5rem; /* Espace entre l'étoile et le texte */
+        }
+
+        .favorites-btn:hover { /* Survol du bouton favoris */
+            background: rgba(255, 255, 255, 0.3); /* Fond légèrement plus visible */
+        }
+
+        .favorites-btn.active { /* Quand la ville est déjà en favoris */
+            background: var(--primary); /* Bouton devient orange */
+            border-color: var(--primary); /* Bordure orange aussi */
+        }
+
+        .loading { /* Overlay de chargement affiché par-dessus tout */
+            position: fixed; /* Reste centré sur l'écran même si on défile */
+            top: 50%; /* 50% depuis le haut */
+            left: 50%; /* 50% depuis la gauche */
+            transform: translate(-50%, -50%); /* Décale de -50% de SA PROPRE taille pour un centrage parfait */
+            background: white; /* Fond blanc */
+            padding: 2rem 3rem; /* Espace intérieur */
+            border-radius: 16px; /* Coins arrondis */
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3); /* Ombre forte pour ressortir */
+            display: none; /* Caché par défaut */
+            z-index: 1000; /* Au-dessus de tout le reste de la page */
+        }
+
+        .loading.active { /* Quand JS ajoute la classe "active" */
+            display: block; /* L'overlay devient visible */
+        }
+
+        .spinner { /* Cercle animé qui tourne pendant le chargement */
+            border: 4px solid #f3f3f3; /* Cercle complet gris clair */
+            border-top: 4px solid var(--primary); /* Un seul côté en orange : crée l'illusion de rotation */
+            border-radius: 50%; /* Cercle parfait */
+            width: 50px; /* Largeur */
+            height: 50px; /* Hauteur (même que largeur = cercle) */
+            animation: spin 1s linear infinite; /* Applique l'animation "spin" en boucle infinie */
+            margin: 0 auto 1rem; /* Centré + espace en dessous avant le texte */
+        }
+
+        @keyframes spin { /* Définition de l'animation de rotation */
+            0%   { transform: rotate(0deg); }   /* Début : position initiale */
+            100% { transform: rotate(360deg); } /* Fin : un tour complet de 360° */
+        }
+
+        .error { /* Bandeau rouge pour afficher les erreurs */
+            background: #ff4444; /* Rouge */
+            color: white; /* Texte blanc */
+            padding: 1rem 1.5rem; /* Espace intérieur */
+            border-radius: 12px; /* Coins arrondis */
+            margin-bottom: 1rem; /* Espace sous le bandeau */
+            display: none; /* Caché par défaut */
+        }
+
+        .error.active { /* Quand JS ajoute la classe "active" */
+            display: block; /* Le bandeau d'erreur devient visible */
+        }
+
+        @media (max-width: 1024px) { /* Règles CSS appliquées uniquement sur tablette (écran ≤ 1024px) */
+            .main-content {
+                grid-template-columns: 1fr; /* Passe de 2 colonnes à 1 seule colonne empilée */
+            }
+
+            .search-bar {
+                min-width: 300px; /* Réduit la largeur minimale de la barre de recherche */
+            }
+        }
+
+        @media (max-width: 768px) { /* Règles CSS appliquées uniquement sur mobile (écran ≤ 768px) */
+            .container {
+                padding: 1rem; /* Réduit le padding général sur mobile */
+            }
+
+            header {
+                flex-direction: column; /* Les éléments du header s'empilent verticalement sur mobile */
+                gap: 1rem; /* Espace entre les éléments empilés */
+                align-items: stretch; /* Chaque élément prend toute la largeur disponible */
+            }
+
+            .search-bar {
+                min-width: auto; /* Supprime la largeur minimale sur mobile */
+            }
+
+            .weather-details {
+                grid-template-columns: repeat(2, 1fr); /* 2 colonnes au lieu de 3 sur petit écran */
+            }
+
+            .current-temp {
+                font-size: 3.5rem; /* Température plus petite sur mobile */
+            }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="weather-bg"></div> <!-- Div vide : affiche l'image de fond via CSS -->
+   
+    <div class="container"> <!-- Conteneur principal limité à 1400px et centré -->
+
+        <header> <!-- En-tête : logo | barre de recherche | bouton favoris -->
+            <div class="logo"> <!-- Logo texte + emoji à gauche -->
+                ☁️ WeatherApp <!-- Emoji nuage + nom de l'application -->
+            </div>
+
+            <div class="search-bar"> <!-- Barre de recherche glassmorphism au centre -->
+                <span class="search-icon">🔍</span> <!-- Emoji loupe décoratif -->
+                <input type="text" id="cityInput" placeholder="Search City" /> <!-- Champ texte, id="cityInput" = cible du JS -->
+            </div>
+
+            <button class="favorites-btn" id="favoriteBtn" onclick="toggleFavorite()"> <!-- Bouton favoris, appelle toggleFavorite() au clic -->
+                ⭐ <span id="favText">Add to Favorites</span> <!-- Le texte est mis à jour dynamiquement par JS -->
+            </button>
+        </header>
+
+        <div class="error" id="error"></div> <!-- Zone d'erreur vide, remplie et affichée par JS en cas de problème -->
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;"> <!-- Ligne flex : ville à gauche, toggle unité à droite -->
+            <div class="location-info"> <!-- Affiche la ville et le pays -->
+                <span>📍</span> <!-- Icône épingle -->
+                <span id="cityName">Paris, FR</span> <!-- Texte mis à jour par JS avec la vraie ville -->
+            </div>
+            <div class="temp-toggle"> <!-- Groupe de deux boutons pour changer l'unité -->
+                <button class="active" onclick="switchUnit('celsius', event)">°C</button> <!-- Celsius, actif par défaut (classe "active") -->
+                <button onclick="switchUnit('fahrenheit', event)">°F</button> <!-- Fahrenheit, inactif par défaut -->
+            </div>
+        </div>
+
+        <div class="forecast-days" id="forecastDays"></div> <!-- Div vide : les 7 cartes de prévision sont générées ici par JS -->
+
+        <div class="main-content"> <!-- Grille CSS à 2 colonnes -->
+
+            <div class="card current-weather"> <!-- Carte gauche : météo actuelle -->
+                <img class="weather-image" id="weatherImage" src="https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=600&q=80" alt="Weather"> <!-- Photo météo, son src est changé par JS selon la condition -->
+                <div class="current-temp" id="currentTemp">12°</div> <!-- Grande température, mise à jour par JS -->
+                <div class="weather-description" id="weatherDesc">Drizzle</div> <!-- Description météo, mise à jour par JS -->
+                <div class="feels-like" id="feelsLike">Feels like 11°</div> <!-- Température ressentie, mise à jour par JS -->
+
+                <div class="weather-details"> <!-- Grille 3 colonnes × 2 lignes des indicateurs -->
+                    <div class="detail-item"> <!-- Case 1 : Vent -->
+                        <div class="detail-icon">💨</div> <!-- Icône décorative -->
+                        <div class="detail-label">Wind</div> <!-- Label fixe -->
+                        <div class="detail-value" id="windSpeed">5 m/s S</div> <!-- Valeur mise à jour par JS -->
+                    </div>
+                    <div class="detail-item"> <!-- Case 2 : Humidité -->
+                        <div class="detail-icon">💧</div>
+                        <div class="detail-label">Humidity</div>
+                        <div class="detail-value" id="humidity">93%</div> <!-- Mis à jour par JS -->
+                    </div>
+                    <div class="detail-item"> <!-- Case 3 : Visibilité -->
+                        <div class="detail-icon">👁️</div>
+                        <div class="detail-label">Visibility</div>
+                        <div class="detail-value" id="visibility">8km</div> <!-- Mis à jour par JS -->
+                    </div>
+                    <div class="detail-item"> <!-- Case 4 : Pression atmosphérique -->
+                        <div class="detail-icon">🌡️</div>
+                        <div class="detail-label">Pressure</div>
+                        <div class="detail-value" id="pressure">989 hPa</div> <!-- Mis à jour par JS -->
+                    </div>
+                    <div class="detail-item"> <!-- Case 5 : Indice UV -->
+                        <div class="detail-icon">☀️</div>
+                        <div class="detail-label">UV Index</div>
+                        <div class="detail-value" id="uvIndex">0 UV</div> <!-- Mis à jour par JS -->
+                    </div>
+                    <div class="detail-item"> <!-- Case 6 : Point de rosée -->
+                        <div class="detail-icon">💦</div>
+                        <div class="detail-label">Dew Point</div>
+                        <div class="detail-value" id="dewPoint">11°C</div> <!-- Calculé mathématiquement et mis à jour par JS -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="card hourly-forecast"> <!-- Carte droite : prévisions heure par heure -->
+                <h2 class="section-title">Hourly forecast</h2> <!-- Titre de la section -->
+                <div class="hourly-scroll" id="hourlyForecast"></div> <!-- Div vide : les cartes horaires y sont injectées par JS -->
+            </div>
+        </div>
+
+        <div class="map-section"> <!-- Conteneur avec hauteur fixe et coins arrondis pour la carte -->
+            <div id="map"></div> <!-- Div vide ciblée par Leaflet pour y construire la carte interactive -->
+        </div>
+    </div>
+
+    <div class="loading" id="loading"> <!-- Overlay de chargement centré, caché par défaut -->
+        <div class="spinner"></div> <!-- Cercle rotatif animé -->
+        <p>Loading weather data...</p> <!-- Message texte sous le spinner -->
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script> <!-- Charge la bibliothèque JavaScript Leaflet pour la carte interactive -->
+
+    <script>
+
+        const API_KEY = '3108083e7ea5b4bc9b829ae045c08519'; // Clé d'authentification pour accéder à l'API OpenWeatherMap
+
+        let currentCity = null; // Nom de la ville actuellement affichée (null = aucune ville chargée)
+        let currentUnit = 'celsius'; // Unité de température active : 'celsius' ou 'fahrenheit'
+        let currentWeatherData = null; // Stocke l'objet JSON de la météo actuelle reçu de l'API (null = pas encore chargé)
+        let currentForecastData = null; // Stocke l'objet JSON des prévisions reçu de l'API (null = pas encore chargé)
+        let map = null; // Stocke l'instance de la carte Leaflet (null = carte pas encore créée)
+        let favorites = JSON.parse(localStorage.getItem('weatherFavorites')) || []; // Charge le tableau des favoris depuis le localStorage du navigateur, ou un tableau vide s'il n'y a rien de sauvegardé
+
+        const weatherImages = { // Dictionnaire : associe chaque condition météo à une URL de photo Unsplash
+            'Clear':        'https://images.unsplash.com/photo-1601297183305-6df142704ea2?w=600&q=80', // Ciel dégagé → photo ensoleillée
+            'Clouds':       'https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=600&q=80', // Nuageux → photo de nuages
+            'Rain':         'https://images.unsplash.com/photo-1519692933481-e162a57d6721?w=600&q=80', // Pluie → photo de pluie
+            'Drizzle':      'https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=600&q=80', // Bruine → photo de nuages
+            'Thunderstorm': 'https://images.unsplash.com/photo-1605727216801-e27ce1d0cc28?w=600&q=80', // Orage → photo d'éclairs
+            'Snow':         'https://images.unsplash.com/photo-1491002052546-bf38f186af56?w=600&q=80', // Neige → photo enneigée
+            'Mist':         'https://images.unsplash.com/photo-1485236715568-ddc5ee6ca227?w=600&q=80'  // Brouillard → photo brumeuse
+        };
+
+        const iconMap = { // Dictionnaire : convertit les codes icônes de l'API en emojis affichables
+            '01d': '☀️', '01n': '🌙',  // Code 01 = ciel dégagé, d = jour (day), n = nuit (night)
+            '02d': '⛅', '02n': '☁️',  // Code 02 = quelques nuages
+            '03d': '☁️', '03n': '☁️',  // Code 03 = nuageux
+            '04d': '☁️', '04n': '☁️',  // Code 04 = très nuageux
+            '09d': '🌧️', '09n': '🌧️', // Code 09 = averses
+            '10d': '🌦️', '10n': '🌧️', // Code 10 = pluie
+            '11d': '⛈️', '11n': '⛈️', // Code 11 = orage
+            '13d': '❄️', '13n': '❄️',  // Code 13 = neige
+            '50d': '🌫️', '50n': '🌫️'  // Code 50 = brouillard ou brume
+        };
+
+        function initMap(lat, lon, cityName) { // Fonction : crée ou recrée la carte Leaflet à la position donnée
+            if (map) { // Si une carte Leaflet existe déjà dans la variable globale...
+                map.remove(); // ...on la détruit pour éviter les erreurs de doublon
+            }
+           
+            map = L.map('map').setView([lat, lon], 8); // Crée la carte dans la div #map, centrée sur lat/lon avec un zoom de niveau 8
+           
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { // Définit les tuiles de fond : cartes OpenStreetMap
+                attribution: '© OpenStreetMap contributors' // Mention légale obligatoire pour utiliser OpenStreetMap
+            }).addTo(map); // Ajoute la couche de tuiles à la carte
+
+            L.marker([lat, lon]).addTo(map) // Crée un marqueur rouge à la position lat/lon et l'ajoute à la carte
+                .bindPopup(`<b>${cityName}</b>`) // Associe une popup HTML avec le nom de la ville en gras
+                .openPopup(); // Ouvre la popup automatiquement sans attendre un clic
+
+            map.on('click', function(e) { // Ajoute un écouteur d'événement : déclenché à chaque clic sur la carte
+                getWeatherByCoords(e.latlng.lat, e.latlng.lng); // Récupère les coordonnées du clic et charge la météo de cet endroit
+            });
+        }
+
+        async function getWeatherByCoords(lat, lon) { // Fonction asynchrone : charge la météo à partir de coordonnées GPS
+            showLoading(true); // Affiche le spinner de chargement
+            hideError(); // Cache l'éventuel message d'erreur affiché précédemment
+           
+            try { // Bloc try : exécute le code, et si une erreur survient, saute dans le catch
+                const weatherResponse = await fetch( // Envoie une requête HTTP GET à l'API météo actuelle et attend la réponse
+                    `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric&lang=fr`
+                    // Paramètres : lat/lon = coordonnées GPS | appid = clé API | units=metric = °C | lang=fr = descriptions en français
+                );
+               
+                if (!weatherResponse.ok) throw new Error('Location not found'); // Si le code HTTP n'est pas 200 OK (ex: 404), déclenche une erreur
+               
+                const weatherData = await weatherResponse.json(); // Attend et convertit la réponse HTTP en objet JavaScript utilisable
+               
+                const forecastResponse = await fetch( // Requête pour les prévisions 5 jours (une entrée toutes les 3h)
+                    `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric&lang=fr`
+                );
+                const forecastData = await forecastResponse.json(); // Convertit les prévisions en objet JavaScript
+
+                const oneCallResp = await fetch( // Requête vers l'API One Call v3.0 pour des données avancées (indice UV, alertes...)
+                    `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric&lang=fr`
+                );
+                const oneCallData = await oneCallResp.json(); // Convertit les données avancées en objet JavaScript
+               
+                currentCity = weatherData.name; // Sauvegarde le nom de la ville dans la variable globale
+                currentWeatherData = weatherData; // Sauvegarde toutes les données météo actuelles en mémoire
+                currentForecastData = forecastData; // Sauvegarde toutes les prévisions en mémoire
+
+                const uvIndex = oneCallData.current && typeof oneCallData.current.uvi !== 'undefined' // Vérifie en deux temps : l'objet "current" existe ET la propriété "uvi" est définie
+                    ? oneCallData.current.uvi // Si oui : utilise la vraie valeur de l'indice UV
+                    : 0; // Si non (API non accessible) : utilise 0 comme valeur par défaut
+
+                displayWeather(weatherData, forecastData, uvIndex); // Appelle la fonction principale d'affichage avec toutes les données
+                updateFavoriteButton(); // Met à jour l'apparence du bouton favoris selon si la ville est déjà sauvegardée
+            } catch (error) { // Si une erreur s'est produite dans le bloc try (réseau, API, etc.)
+                showError(error.message); // Affiche le message d'erreur à l'écran
+            } finally { // Ce bloc s'exécute TOUJOURS, qu'il y ait eu une erreur ou non
+                showLoading(false); // Cache le spinner de chargement dans tous les cas
+            }
+        }
+
+        async function searchWeather() { // Fonction asynchrone : recherche la météo par nom de ville (déclenchée par Entrée)
+            const city = document.getElementById('cityInput').value.trim(); // Récupère le texte du champ, .trim() supprime les espaces en début et fin
+            if (!city) return; // Si le champ est vide, quitte la fonction immédiatement sans rien faire
+           
+            showLoading(true); // Affiche le spinner
+            hideError(); // Cache l'erreur précédente
+           
+            try {
+                const weatherResponse = await fetch( // Requête API météo en utilisant le nom de la ville comme paramètre
+                    `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${API_KEY}&units=metric&lang=fr`
+                    // q=${city} = paramètre de recherche par nom (ex: q=Paris)
+                );
+               
+                if (!weatherResponse.ok) throw new Error('City not found'); // Si la ville n'est pas trouvée (code 404), déclenche une erreur
+               
+                const weatherData = await weatherResponse.json(); // Convertit la réponse météo en objet JS
+               
+                const forecastResponse = await fetch( // Requête prévisions 5 jours par nom de ville
+                    `https://api.openweathermap.org/data/2.5/forecast?q=${city}&appid=${API_KEY}&units=metric&lang=fr`
+                );
+                const forecastData = await forecastResponse.json(); // Convertit les prévisions en objet JS
+
+                const oneCallResp = await fetch( // One Call utilise les coordonnées GPS reçues dans la 1ère réponse
+                    `https://api.openweathermap.org/data/3.0/onecall?lat=${weatherData.coord.lat}&lon=${weatherData.coord.lon}&appid=${API_KEY}&units=metric&lang=fr`
+                    // weatherData.coord.lat = latitude, weatherData.coord.lon = longitude de la ville trouvée
+                );
+                const oneCallData = await oneCallResp.json(); // Convertit les données avancées en objet JS
+               
+                currentCity = weatherData.name; // Sauvegarde le nom de la ville
+                currentWeatherData = weatherData; // Sauvegarde les données météo
+                currentForecastData = forecastData; // Sauvegarde les prévisions
+
+                const uvIndex = oneCallData.current && typeof oneCallData.current.uvi !== 'undefined' // Vérifie l'existence de l'indice UV
+                    ? oneCallData.current.uvi // Valeur réelle si disponible
+                    : 0; // 0 par défaut si non disponible
+               
+                displayWeather(weatherData, forecastData, uvIndex); // Affiche toutes les données
+                updateFavoriteButton(); // Met à jour le bouton favoris
+            } catch (error) {
+                showError(error.message); // Affiche le message d'erreur
+            } finally {
+                showLoading(false); // Cache le spinner dans tous les cas
+            }
+        }
+
+        function displayWeather(data, forecast, uvIndex) { // Fonction principale : met à jour tous les éléments HTML avec les nouvelles données
+            const weatherMain = data.weather[0].main; // Extrait la condition principale (ex: 'Rain', 'Clear', 'Clouds') du premier élément du tableau weather
+            document.getElementById('weatherImage').src = weatherImages[weatherMain] || weatherImages['Clouds']; // Change la photo : cherche dans le dictionnaire, utilise Clouds si la condition n'est pas listée
+           
+            document.getElementById('cityName').textContent = `${data.name}, ${data.sys.country}`; // Affiche "NomVille, CODE_PAYS" (ex: "Lyon, FR")
+            document.getElementById('weatherDesc').textContent = data.weather[0].description; // Affiche la description en français (ex: "pluie légère") grâce au paramètre lang=fr
+           
+            updateTemperatures(data); // Délègue l'affichage des températures à une fonction dédiée
+           
+            const windDir = getWindDirection(data.wind.deg); // Appelle la fonction pour convertir les degrés en direction cardinale
+            document.getElementById('windSpeed').textContent = `${Math.round(data.wind.speed)} m/s ${windDir}`; // Affiche la vitesse arrondie + la direction (ex: "5 m/s NE")
+            document.getElementById('humidity').textContent = `${data.main.humidity}%`; // Affiche l'humidité relative en pourcentage
+            document.getElementById('visibility').textContent = `${(data.visibility / 1000).toFixed(0)}km`; // Divise les mètres par 1000 pour avoir des km, .toFixed(0) = pas de décimale
+            document.getElementById('pressure').textContent = `${data.main.pressure} hPa`; // Affiche la pression atmosphérique en hectopascals
+            document.getElementById('uvIndex').textContent = `${uvIndex.toFixed(0)} UV`; // Affiche l'indice UV arrondi à l'entier
+           
+            const dewPoint = calculateDewPoint(data.main.temp, data.main.humidity); // Calcule le point de rosée avec la formule de Magnus
+            document.getElementById('dewPoint').textContent = currentUnit === 'celsius' // Choisit l'unité d'affichage
+                ? `${Math.round(dewPoint)}°C` // Celsius : arrondit et ajoute °C
+                : `${Math.round((dewPoint * 9/5) + 32)}°F`; // Fahrenheit : convertit (×9/5 + 32) puis arrondit
+           
+            displayForecastDays(forecast); // Génère et injecte les 7 cartes de prévision journalières
+            displayHourlyForecast(forecast); // Génère et injecte les 8 cartes de prévision horaires
+            initMap(data.coord.lat, data.coord.lon, data.name); // Réinitialise la carte à la position de la nouvelle ville
+        }
+
+        function updateTemperatures(data) { // Fonction dédiée à l'affichage des températures (appelée aussi quand on change d'unité)
+            if (currentUnit === 'celsius') { // Si l'unité active est Celsius
+                document.getElementById('currentTemp').textContent = `${Math.round(data.main.temp)}°`; // Affiche la température actuelle arrondie
+                document.getElementById('feelsLike').textContent = `Feels like ${Math.round(data.main.feels_like)}°`; // Affiche le ressenti arrondi
+            } else { // Sinon, l'unité est Fahrenheit
+                const tempF = (data.main.temp * 9/5) + 32; // Conversion °C → °F : multiplier par 9/5 puis ajouter 32
+                const feelsF = (data.main.feels_like * 9/5) + 32; // Même conversion pour la température ressentie
+                document.getElementById('currentTemp').textContent = `${Math.round(tempF)}°`; // Affiche en Fahrenheit arrondi
+                document.getElementById('feelsLike').textContent = `Feels like ${Math.round(feelsF)}°`; // Affiche le ressenti en Fahrenheit
+            }
+        }
+
+        function displayForecastDays(forecast) { // Génère les cartes HTML des 7 prochains jours de prévision
+            const container = document.getElementById('forecastDays'); // Cible le conteneur HTML des cartes jours
+            container.innerHTML = ''; // Efface tout le contenu existant avant de regénérer
+           
+            const dailyData = {}; // Crée un objet vide qui contiendra une seule entrée par jour
+            forecast.list.forEach(item => { // Parcourt toutes les 40 entrées (5 jours × 8 tranches de 3h)
+                const date = new Date(item.dt * 1000).toLocaleDateString(); // Convertit le timestamp Unix (secondes) en millisecondes, puis en date locale lisible
+                if (!dailyData[date]) { // Si ce jour n'a pas encore d'entrée dans l'objet...
+                    dailyData[date] = item; // ...conserve la première entrée de la journée (la plus tôt dans la journée)
+                }
+            });
+           
+            const days = Object.values(dailyData).slice(0, 7); // Extrait les valeurs de l'objet en tableau, et garde seulement les 7 premiers
+            days.forEach((day, index) => { // Parcourt chaque jour, index = position (0 = aujourd'hui)
+                const date = new Date(day.dt * 1000); // Crée un objet Date JavaScript à partir du timestamp
+                const dayName = index === 0 ? 'Today' : date.toLocaleDateString('en', { weekday: 'short' }); // Premier jour = "Today", autres = nom court en anglais ("Mon", "Tue"...)
+                const temp = currentUnit === 'celsius' // Convertit selon l'unité actuellement active
+                    ? Math.round(day.main.temp) // Celsius : arrondit directement
+                    : Math.round((day.main.temp * 9/5) + 32); // Fahrenheit : convertit puis arrondit
+               
+                const card = document.createElement('div'); // Crée dynamiquement un nouvel élément <div> en JavaScript
+                card.className = `day-card ${index === 0 ? 'active' : ''}`; // Ajoute "active" (fond orange) seulement pour la première carte (aujourd'hui)
+                card.innerHTML = ` // Insère du HTML à l'intérieur de la carte créée
+                    <div class="day-name">${dayName}</div>
+                    <div class="day-icon">${iconMap[day.weather[0].icon]}</div>
+                    <div class="day-temp">${temp}°</div>
+                `;
+                container.appendChild(card); // Ajoute la carte à la fin du conteneur HTML
+            });
+        }
+
+        function displayHourlyForecast(forecast) { // Génère les cartes HTML des prévisions heure par heure
+            const container = document.getElementById('hourlyForecast'); // Cible le conteneur des cartes horaires
+            container.innerHTML = ''; // Efface les anciennes cartes
+           
+            const hours = forecast.list.slice(0, 8); // Prend les 8 premières entrées (toutes les 3h = couvre 24h)
+            hours.forEach(hour => { // Parcourt chaque tranche horaire
+                const time = new Date(hour.dt * 1000).toLocaleTimeString('en', { hour: 'numeric', hour12: true }); // Formate l'heure en format 12h anglais (ex: "3 PM", "6 AM")
+                const temp = currentUnit === 'celsius' // Choisit la conversion selon l'unité active
+                    ? Math.round(hour.main.temp) // Celsius : arrondit
+                    : Math.round((hour.main.temp * 9/5) + 32); // Fahrenheit : convertit puis arrondit
+                const precip = hour.pop ? `${Math.round(hour.pop * 100)}%` : '0%'; // pop = "probability of precipitation" entre 0 et 1, multiplié par 100 pour avoir un pourcentage
+               
+                const card = document.createElement('div'); // Crée une nouvelle div pour la carte horaire
+                card.className = 'hour-card'; // Lui attribue la classe CSS pour le style
+                card.innerHTML = ` // Insère le contenu HTML de la carte
+                    <div class="hour-time">${time}</div>
+                    <div class="hour-icon">${iconMap[hour.weather[0].icon]}</div>
+                    <div class="hour-temp">${temp}°</div>
+                    <div class="hour-precip">${precip}</div>
+                `;
+                container.appendChild(card); // Ajoute la carte dans le conteneur
+            });
+        }
+
+        function getWindDirection(deg) { // Convertit un angle de direction du vent (0-360°) en lettre cardinale
+            const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']; // 8 directions réparties sur 360°, chacune couvre 45°
+            return dirs[Math.round(deg / 45) % 8]; // Divise l'angle par 45, arrondit à l'entier, modulo 8 pour rester dans le tableau
+        }
+
+        function calculateDewPoint(temp, humidity) { // Calcule le point de rosée via la formule approximée de Magnus
+            const a = 17.27; // Constante empirique a de la formule de Magnus-Tetens
+            const b = 237.7; // Constante empirique b (en degrés Celsius)
+            const alpha = ((a * temp) / (b + temp)) + Math.log(humidity / 100); // Calcule le paramètre intermédiaire alpha (Math.log = logarithme naturel)
+            return (b * alpha) / (a - alpha); // Retourne le point de rosée en degrés Celsius
+        }
+
+        function switchUnit(unit, event) { // Change l'unité de température et met à jour tout l'affichage
+            currentUnit = unit; // Met à jour la variable globale avec la nouvelle unité ('celsius' ou 'fahrenheit')
+           
+            document.querySelectorAll('.temp-toggle button').forEach(btn => { // Sélectionne les deux boutons °C et °F
+                btn.classList.remove('active'); // Retire la classe "active" des deux pour repartir à zéro
+            });
+           
+            if (event && event.target) { // Vérifie que l'événement click et sa cible existent bien
+                event.target.classList.add('active'); // Ajoute "active" uniquement au bouton qui vient d'être cliqué
+            }
+
+            if (currentWeatherData) { // Ne fait rien si aucune donnée météo n'est chargée
+                updateTemperatures(currentWeatherData); // Recalcule et réaffiche température + ressenti dans la nouvelle unité
+
+                if (currentForecastData) { // Si les prévisions sont aussi chargées...
+                    displayForecastDays(currentForecastData); // Régénère les 7 cartes jours avec les températures converties
+                    displayHourlyForecast(currentForecastData); // Régénère les cartes horaires avec les températures converties
+                }
+
+                const dewPoint = calculateDewPoint( // Recalcule le point de rosée (toujours en °C en interne)
+                    currentWeatherData.main.temp, // Température en °C (les données API sont toujours stockées en Celsius)
+                    currentWeatherData.main.humidity // Humidité en pourcentage
+                );
+                document.getElementById('dewPoint').textContent = currentUnit === 'celsius' // Met à jour l'affichage selon la nouvelle unité
+                    ? `${Math.round(dewPoint)}°C` // Celsius : affiche directement
+                    : `${Math.round((dewPoint * 9/5) + 32)}°F`; // Fahrenheit : convertit le résultat Celsius puis affiche
+            }
+        }
+
+        function toggleFavorite() { // Ajoute ou retire la ville actuelle de la liste des favoris
+            if (!currentCity) return; // Si aucune ville n'est chargée, quitte la fonction immédiatement
+           
+            const index = favorites.findIndex(f => f === currentCity); // Cherche la ville dans le tableau (retourne -1 si elle n'y est pas)
+           
+            if (index > -1) { // Si la ville a été trouvée (index ≥ 0)
+                favorites.splice(index, 1); // Supprime 1 élément à cet index pour retirer la ville du tableau
+            } else { // Si la ville n'est pas dans les favoris
+                favorites.push(currentCity); // Ajoute la ville à la fin du tableau des favoris
+            }
+           
+            localStorage.setItem('weatherFavorites', JSON.stringify(favorites)); // Sérialise le tableau en JSON et sauvegarde dans le localStorage (persistant entre sessions)
+            updateFavoriteButton(); // Met à jour l'apparence du bouton favoris
+        }
+
+        function updateFavoriteButton() { // Met à jour visuellement le bouton favoris selon l'état actuel
+            const btn = document.getElementById('favoriteBtn'); // Cible le bouton HTML
+            const text = document.getElementById('favText'); // Cible le span contenant le texte du bouton
+            const isFavorite = favorites.some(f => f === currentCity); // Retourne true si la ville actuelle est dans le tableau favorites
+           
+            if (isFavorite) { // Si la ville est déjà en favoris
+                btn.classList.add('active'); // Ajoute "active" : le bouton devient orange
+                text.textContent = 'Remove from Favorites'; // Change le texte du bouton
+            } else { // Si la ville n'est pas en favoris
+                btn.classList.remove('active'); // Retire "active" : le bouton redevient transparent
+                text.textContent = 'Add to Favorites'; // Change le texte du bouton
+            }
+        }
+
+        function showLoading(show) { // Affiche ou masque l'overlay de chargement selon la valeur de "show"
+            document.getElementById('loading').classList.toggle('active', show); // toggle avec 2e argument : force l'ajout si show=true, ou le retrait si show=false
+        }
+
+        function showError(message) { // Affiche un message d'erreur pendant 5 secondes
+            const error = document.getElementById('error'); // Cible la div d'erreur
+            error.textContent = message; // Insère le message dans la div
+            error.classList.add('active'); // Rend la div visible (display: block)
+            setTimeout(() => error.classList.remove('active'), 5000); // Planifie la suppression de "active" après 5000 millisecondes (5 secondes)
+        }
+
+        function hideError() { // Cache immédiatement le bandeau d'erreur
+            document.getElementById('error').classList.remove('active'); // Retire "active" → display: none
+        }
+
+        document.getElementById('cityInput').addEventListener('keypress', (e) => { // Ajoute un écouteur sur le champ de recherche qui se déclenche à chaque touche pressée
+            if (e.key === 'Enter') { // Si la touche pressée est la touche Entrée
+                searchWeather(); // Lance la recherche météo
+            }
+        });
+
+        document.getElementById('cityInput').value = 'Paris'; // Pré-remplit le champ de recherche avec "Paris" au chargement de la page
+        searchWeather(); // Lance automatiquement la recherche pour Paris dès que la page est chargée
+
+    </script>
+</body>
+</html>
